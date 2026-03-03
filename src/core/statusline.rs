@@ -215,8 +215,21 @@ impl StatusLineGenerator {
     }
 
     fn render_segment(&self, config: &SegmentConfig, data: &SegmentData) -> String {
-        let icon = if let Some(dynamic_icon) = data.metadata.get("dynamic_icon") {
-            dynamic_icon.clone()
+        let icon = if data.metadata.contains_key("dynamic_icon_nerd")
+            || data.metadata.contains_key("dynamic_icon_plain")
+        {
+            match self.config.style.mode {
+                StyleMode::Plain => data
+                    .metadata
+                    .get("dynamic_icon_plain")
+                    .cloned()
+                    .unwrap_or_else(|| self.get_icon(config)),
+                _ => data
+                    .metadata
+                    .get("dynamic_icon_nerd")
+                    .cloned()
+                    .unwrap_or_else(|| self.get_icon(config)),
+            }
         } else {
             self.get_icon(config)
         };
