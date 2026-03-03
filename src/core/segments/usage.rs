@@ -147,7 +147,18 @@ impl UsageSegment {
         "claude-code".to_string()
     }
 
-    fn get_proxy_from_settings() -> Option<String> {
+    fn get_proxy_url() -> Option<String> {
+        // 1. Environment variables first (HTTPS_PROXY, HTTP_PROXY, lowercase variants)
+        for var in &["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"] {
+            if let Ok(val) = std::env::var(var) {
+                if !val.is_empty() {
+                    log_debug("usage:proxy", &format!("using env var {}={}", var, val));
+                    return Some(val);
+                }
+            }
+        }
+
+        // 2. Fall back to ~/.claude/settings.json env config
         let home = std::env::var("HOME")
             .or_else(|_| std::env::var("USERPROFILE"))
             .ok()?;
@@ -156,13 +167,21 @@ impl UsageSegment {
         let content = std::fs::read_to_string(&settings_path).ok()?;
         let settings: serde_json::Value = serde_json::from_str(&content).ok()?;
 
-        // Try HTTPS_PROXY first, then HTTP_PROXY
-        settings
+        let proxy = settings
             .get("env")?
             .get("HTTPS_PROXY")
             .or_else(|| settings.get("env")?.get("HTTP_PROXY"))
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
+            .map(|s| s.to_string());
+
+        if let Some(ref url) = proxy {
+            log_debug(
+                "usage:proxy",
+                &format!("using settings.json proxy: {}", url),
+            );
+        }
+
+        proxy
     }
 
     fn fetch_api_usage(
@@ -174,7 +193,8 @@ impl UsageSegment {
         let url = format!("{}/api/oauth/usage", api_base_url);
         let user_agent = Self::get_claude_code_version();
 
-        let agent = if let Some(proxy_url) = Self::get_proxy_from_settings() {
+        // Configure proxy: env vars first, then Claude settings
+        let agent = if let Some(proxy_url) = Self::get_proxy_url() {
             if let Ok(proxy) = ureq::Proxy::new(&proxy_url) {
                 ureq::Agent::config_builder()
                     .proxy(Some(proxy))
