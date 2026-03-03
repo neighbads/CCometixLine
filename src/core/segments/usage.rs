@@ -254,8 +254,55 @@ impl UsageSegment {
     }
 }
 
+impl UsageSegment {
+    /// Check if a custom ANTHROPIC_BASE_URL is configured (env var or settings.json).
+    /// When set, the user is using a non-official API that lacks the usage endpoint.
+    fn is_custom_api_base() -> bool {
+        // 1. Check environment variables
+        if let Ok(val) = std::env::var("ANTHROPIC_BASE_URL") {
+            if !val.is_empty() {
+                log_debug("usage", &format!("ANTHROPIC_BASE_URL env set: {}", val));
+                return true;
+            }
+        }
+
+        // 2. Check ~/.claude/settings.json env.ANTHROPIC_BASE_URL
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .ok();
+        if let Some(home) = home {
+            let settings_path = format!("{}/.claude/settings.json", home);
+            if let Ok(content) = std::fs::read_to_string(&settings_path) {
+                if let Ok(settings) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(val) = settings
+                        .get("env")
+                        .and_then(|e| e.get("ANTHROPIC_BASE_URL"))
+                        .and_then(|v| v.as_str())
+                    {
+                        if !val.is_empty() {
+                            log_debug(
+                                "usage",
+                                &format!("ANTHROPIC_BASE_URL in settings.json: {}", val),
+                            );
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+
+        false
+    }
+}
+
 impl Segment for UsageSegment {
     fn collect(&self, _input: &InputData) -> Option<SegmentData> {
+        // Skip usage when using a custom API base (non-official API has no usage endpoint)
+        if Self::is_custom_api_base() {
+            log_debug("usage", "skipped: custom ANTHROPIC_BASE_URL detected");
+            return None;
+        }
+
         let token = match credentials::get_oauth_token() {
             Some(t) => {
                 log_debug("usage", "oauth token obtained");
