@@ -6,6 +6,10 @@ use std::io::{self, IsTerminal};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse_args();
 
+    if cli.debug {
+        ccometixline::utils::logger::enable();
+    }
+
     // Handle configuration commands
     if cli.init {
         use ccometixline::config::InitResult;
