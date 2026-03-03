@@ -1,6 +1,7 @@
 use super::{Segment, SegmentData};
 use crate::config::{InputData, SegmentId};
 use crate::utils::credentials;
+use crate::utils::logger::log_debug;
 use chrono::{DateTime, Datelike, Duration, Local, Timelike, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -8,7 +9,7 @@ use std::collections::HashMap;
 #[derive(Debug, Deserialize)]
 struct ApiUsageResponse {
     five_hour: UsagePeriod,
-    seven_day: UsagePeriod,
+    seven_day: Option<UsagePeriod>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -20,7 +21,7 @@ struct UsagePeriod {
 #[derive(Debug, Serialize, Deserialize)]
 struct ApiUsageCache {
     five_hour_utilization: f64,
-    seven_day_utilization: f64,
+    seven_day_utilization: Option<f64>,
     resets_at: Option<String>,
     cached_at: String,
 }
@@ -77,11 +78,21 @@ impl UsageSegment {
     fn load_cache(&self) -> Option<ApiUsageCache> {
         let cache_path = Self::get_cache_path()?;
         if !cache_path.exists() {
+            log_debug("usage:cache", "no cache file found");
             return None;
         }
 
         let content = std::fs::read_to_string(&cache_path).ok()?;
-        serde_json::from_str(&content).ok()
+        match serde_json::from_str(&content) {
+            Ok(cache) => {
+                log_debug("usage:cache", "loaded cache successfully");
+                Some(cache)
+            }
+            Err(e) => {
+                log_debug("usage:cache", &format!("cache parse error: {}", e));
+                None
+            }
+        }
     }
 
     fn save_cache(&self, cache: &ApiUsageCache) {
@@ -99,8 +110,19 @@ impl UsageSegment {
         if let Ok(cached_at) = DateTime::parse_from_rfc3339(&cache.cached_at) {
             let now = Utc::now();
             let elapsed = now.signed_duration_since(cached_at.with_timezone(&Utc));
-            elapsed.num_seconds() < cache_duration as i64
+            let valid = elapsed.num_seconds() < cache_duration as i64;
+            log_debug(
+                "usage:cache",
+                &format!(
+                    "cache age={}s, max={}s, valid={}",
+                    elapsed.num_seconds(),
+                    cache_duration,
+                    valid
+                ),
+            );
+            valid
         } else {
+            log_debug("usage:cache", "could not parse cached_at timestamp");
             false
         }
     }
@@ -165,7 +187,7 @@ impl UsageSegment {
             ureq::Agent::new_with_defaults()
         };
 
-        let response = agent
+        let response = match agent
             .get(&url)
             .header("Authorization", &format!("Bearer {}", token))
             .header("anthropic-beta", "oauth-2025-04-20")
@@ -174,15 +196,52 @@ impl UsageSegment {
             .timeout_global(Some(std::time::Duration::from_secs(timeout_secs)))
             .build()
             .call()
-            .ok()?;
+        {
+            Ok(resp) => resp,
+            Err(e) => {
+                log_debug("usage:api", &format!("HTTP request failed: {}", e));
+                return None;
+            }
+        };
 
-        response.into_body().read_json().ok()
+        let status = response.status();
+        log_debug("usage:api", &format!("HTTP status: {}", status));
+
+        if status != 200 {
+            return None;
+        }
+
+        let body = match response.into_body().read_to_string() {
+            Ok(b) => b,
+            Err(e) => {
+                log_debug("usage:api", &format!("failed to read body: {}", e));
+                return None;
+            }
+        };
+        log_debug("usage:api", &format!("response body: {}", body));
+
+        match serde_json::from_str::<ApiUsageResponse>(&body) {
+            Ok(parsed) => Some(parsed),
+            Err(e) => {
+                log_debug("usage:api", &format!("deserialization error: {}", e));
+                None
+            }
+        }
     }
 }
 
 impl Segment for UsageSegment {
     fn collect(&self, _input: &InputData) -> Option<SegmentData> {
-        let token = credentials::get_oauth_token()?;
+        let token = match credentials::get_oauth_token() {
+            Some(t) => {
+                log_debug("usage", "oauth token obtained");
+                t
+            }
+            None => {
+                log_debug("usage", "failed to get oauth token");
+                return None;
+            }
+        };
 
         // Load config from file to get segment options
         let config = crate::config::Config::load().ok()?;
@@ -211,6 +270,7 @@ impl Segment for UsageSegment {
 
         let (five_hour_util, seven_day_util, resets_at) = if use_cached {
             let cache = cached_data.unwrap();
+            log_debug("usage", "using cached data");
             (
                 cache.five_hour_utilization,
                 cache.seven_day_utilization,
@@ -219,37 +279,57 @@ impl Segment for UsageSegment {
         } else {
             match self.fetch_api_usage(api_base_url, &token, timeout) {
                 Some(response) => {
+                    let seven_day_util = response.seven_day.as_ref().map(|s| s.utilization);
+                    let resets_at = response
+                        .seven_day
+                        .as_ref()
+                        .and_then(|s| s.resets_at.clone())
+                        .or_else(|| response.five_hour.resets_at.clone());
+
+                    log_debug(
+                        "usage",
+                        &format!(
+                            "api result: 5h={}, 7d={:?}, resets_at={:?}",
+                            response.five_hour.utilization, seven_day_util, resets_at
+                        ),
+                    );
+
                     let cache = ApiUsageCache {
                         five_hour_utilization: response.five_hour.utilization,
-                        seven_day_utilization: response.seven_day.utilization,
-                        resets_at: response.seven_day.resets_at.clone(),
+                        seven_day_utilization: seven_day_util,
+                        resets_at: resets_at.clone(),
                         cached_at: Utc::now().to_rfc3339(),
                     };
                     self.save_cache(&cache);
-                    (
-                        response.five_hour.utilization,
-                        response.seven_day.utilization,
-                        response.seven_day.resets_at,
-                    )
+                    (response.five_hour.utilization, seven_day_util, resets_at)
                 }
                 None => {
                     if let Some(cache) = cached_data {
+                        log_debug("usage", "api failed, falling back to stale cache");
                         (
                             cache.five_hour_utilization,
                             cache.seven_day_utilization,
                             cache.resets_at,
                         )
                     } else {
+                        log_debug("usage", "api failed and no cache available");
                         return None;
                     }
                 }
             }
         };
 
-        let dynamic_icon = Self::get_circle_icon(seven_day_util / 100.0);
+        // Use seven_day utilization for the icon if available, otherwise five_hour
+        let icon_util = seven_day_util.unwrap_or(five_hour_util);
+        let dynamic_icon = Self::get_circle_icon(icon_util / 100.0);
         let five_hour_percent = five_hour_util.round() as u8;
         let primary = format!("{}%", five_hour_percent);
-        let secondary = format!("· {}", Self::format_reset_time(resets_at.as_deref()));
+
+        let secondary = if resets_at.is_some() {
+            format!("· {}", Self::format_reset_time(resets_at.as_deref()))
+        } else {
+            "· 5h only".to_string()
+        };
 
         let mut metadata = HashMap::new();
         metadata.insert("dynamic_icon".to_string(), dynamic_icon);
@@ -259,7 +339,9 @@ impl Segment for UsageSegment {
         );
         metadata.insert(
             "seven_day_utilization".to_string(),
-            seven_day_util.to_string(),
+            seven_day_util
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "n/a".to_string()),
         );
 
         Some(SegmentData {
