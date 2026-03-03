@@ -34,7 +34,7 @@ impl UsageSegment {
         Self
     }
 
-    fn get_circle_icon(utilization: f64) -> String {
+    fn get_circle_icon_nerd(utilization: f64) -> String {
         let percent = (utilization * 100.0) as u8;
         match percent {
             0..=12 => "\u{f0a9e}".to_string(),  // circle_slice_1
@@ -45,6 +45,17 @@ impl UsageSegment {
             63..=75 => "\u{f0aa3}".to_string(), // circle_slice_6
             76..=87 => "\u{f0aa4}".to_string(), // circle_slice_7
             _ => "\u{f0aa5}".to_string(),       // circle_slice_8
+        }
+    }
+
+    fn get_circle_icon_plain(utilization: f64) -> String {
+        let percent = (utilization * 100.0) as u8;
+        match percent {
+            0..=12 => "○".to_string(),  // empty circle
+            13..=25 => "◔".to_string(), // quarter
+            26..=50 => "◑".to_string(), // half
+            51..=75 => "◕".to_string(), // three quarters
+            _ => "●".to_string(),       // full circle
         }
     }
 
@@ -339,7 +350,8 @@ impl Segment for UsageSegment {
 
         // Use seven_day utilization for the icon if available, otherwise five_hour
         let icon_util = seven_day_util.unwrap_or(five_hour_util);
-        let dynamic_icon = Self::get_circle_icon(icon_util / 100.0);
+        let dynamic_icon_nerd = Self::get_circle_icon_nerd(icon_util / 100.0);
+        let dynamic_icon_plain = Self::get_circle_icon_plain(icon_util / 100.0);
         let five_hour_percent = five_hour_util.round() as u8;
         let primary = format!("{}%", five_hour_percent);
 
@@ -350,7 +362,8 @@ impl Segment for UsageSegment {
         };
 
         let mut metadata = HashMap::new();
-        metadata.insert("dynamic_icon".to_string(), dynamic_icon);
+        metadata.insert("dynamic_icon_nerd".to_string(), dynamic_icon_nerd);
+        metadata.insert("dynamic_icon_plain".to_string(), dynamic_icon_plain);
         metadata.insert(
             "five_hour_utilization".to_string(),
             five_hour_util.to_string(),
