@@ -15,6 +15,10 @@ pub struct Cli {
     /// Patch Claude Code cli.js to disable context warnings
     #[arg(long = "patch")]
     pub patch: Option<String>,
+
+    /// Enable debug logging to ~/.claude/ccline/ccline.log
+    #[arg(long = "debug")]
+    pub debug: bool,
 }
 
 impl Cli {
