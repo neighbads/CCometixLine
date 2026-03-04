@@ -523,6 +523,20 @@ pub fn collect_all_segments(
                 let segment = UpdateSegment::new();
                 segment.collect(input)
             }
+            crate::config::SegmentId::Custom(ref name) => {
+                let command = segment_config
+                    .options
+                    .get("command")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let timeout = segment_config
+                    .options
+                    .get("timeout")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(2);
+                let segment = CustomSegment::new(name.clone(), command.to_string(), timeout);
+                segment.collect(input)
+            }
         };
 
         if let Some(data) = segment_data {

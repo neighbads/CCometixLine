@@ -49,6 +49,7 @@ impl HelpComponent {
                 ("[S]", "Save Config"),
                 ("[W]", "Write Theme"),
                 ("[Ctrl+S]", "Save Theme"),
+                ("[F]", "Flush Custom"),
                 ("[Esc]", "Quit"),
             ]
         };

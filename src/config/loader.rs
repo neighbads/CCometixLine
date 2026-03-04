@@ -183,7 +183,7 @@ impl Config {
         // Validate segment IDs are unique
         let mut seen_ids = std::collections::HashSet::new();
         for segment in &self.segments {
-            if !seen_ids.insert(segment.id) {
+            if !seen_ids.insert(segment.id.clone()) {
                 return Err(format!("Duplicate segment ID: {:?}", segment.id).into());
             }
         }

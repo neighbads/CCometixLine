@@ -61,7 +61,7 @@ pub enum AnsiColor {
     Rgb { r: u8, g: u8, b: u8 },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SegmentId {
     Model,
@@ -73,6 +73,27 @@ pub enum SegmentId {
     Session,
     OutputStyle,
     Update,
+    Custom(String),
+}
+
+impl SegmentId {
+    pub fn display_name_numbered(&self, custom_index: Option<usize>) -> String {
+        match self {
+            SegmentId::Model => "Model".to_string(),
+            SegmentId::Directory => "Directory".to_string(),
+            SegmentId::Git => "Git".to_string(),
+            SegmentId::ContextWindow => "Context Window".to_string(),
+            SegmentId::Usage => "Usage".to_string(),
+            SegmentId::Cost => "Cost".to_string(),
+            SegmentId::Session => "Session".to_string(),
+            SegmentId::OutputStyle => "Output Style".to_string(),
+            SegmentId::Update => "Update".to_string(),
+            SegmentId::Custom(name) => match custom_index {
+                Some(idx) => format!("Custom{}", idx + 1),
+                None => format!("Custom({})", name),
+            },
+        }
+    }
 }
 
 // Legacy compatibility structure
@@ -240,6 +261,24 @@ impl NormalizedUsage {
 }
 
 impl Config {
+    /// Get the custom segment index (0-based) for a segment at the given position
+    pub fn custom_segment_index(&self, segment_pos: usize) -> Option<usize> {
+        let segment = self.segments.get(segment_pos)?;
+        if !matches!(segment.id, SegmentId::Custom(_)) {
+            return None;
+        }
+        let mut custom_count = 0;
+        for (i, seg) in self.segments.iter().enumerate() {
+            if i == segment_pos {
+                return Some(custom_count);
+            }
+            if matches!(seg.id, SegmentId::Custom(_)) {
+                custom_count += 1;
+            }
+        }
+        None
+    }
+
     /// Check if current config matches the specified theme preset
     pub fn matches_theme(&self, theme_name: &str) -> bool {
         let theme_preset = crate::ui::themes::ThemePresets::get_theme(theme_name);
