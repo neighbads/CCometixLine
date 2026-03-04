@@ -32,6 +32,11 @@ pub struct Cli {
     #[arg(long = "patch")]
     pub patch: Option<String>,
 
+    /// Add custom segment with shell command (can be specified multiple times)
+    /// e.g., --custom "echo hello" --custom "date +%H:%M"
+    #[arg(long = "custom")]
+    pub custom: Vec<String>,
+
     /// Enable debug logging to ~/.claude/ccline/ccline.log
     #[arg(long = "debug")]
     pub debug: bool,

@@ -42,6 +42,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if cli.config {
+        // Apply --custom arguments before launching TUI
+        if !cli.custom.is_empty() {
+            let mut config = Config::load().unwrap_or_else(|_| Config::default());
+            apply_custom_segments(&mut config, &cli.custom);
+            if let Err(e) = config.save() {
+                eprintln!("Warning: Failed to save config: {}", e);
+            }
+        }
+
         #[cfg(feature = "tui")]
         {
             ccometixline::ui::run_configurator()?;
@@ -100,6 +109,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         config = ccometixline::ui::themes::ThemePresets::get_theme(&theme);
     }
 
+    // Apply --custom arguments: sync custom segments into config and save
+    if !cli.custom.is_empty() {
+        apply_custom_segments(&mut config, &cli.custom);
+
+        // Save updated config
+        if let Err(e) = config.save() {
+            eprintln!("Warning: Failed to save config: {}", e);
+        }
+    }
+
     // Check if stdin has data
     if io::stdin().is_terminal() {
         // No input data available, show main menu
@@ -145,4 +164,72 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", statusline);
 
     Ok(())
+}
+
+fn apply_custom_segments(config: &mut Config, custom_commands: &[String]) {
+    use ccometixline::config::{
+        AnsiColor, ColorConfig, IconConfig, SegmentConfig, SegmentId, TextStyleConfig,
+    };
+    use ccometixline::utils::logger::log_debug;
+    use std::collections::HashMap;
+
+    // Remove existing custom segments
+    let removed = config
+        .segments
+        .iter()
+        .filter(|s| matches!(s.id, SegmentId::Custom(_)))
+        .count();
+    config
+        .segments
+        .retain(|s| !matches!(s.id, SegmentId::Custom(_)));
+
+    log_debug(
+        "custom:cli",
+        &format!(
+            "removed {} existing custom segments, adding {} new",
+            removed,
+            custom_commands.len()
+        ),
+    );
+
+    // Add new custom segments from CLI args
+    for (i, command) in custom_commands.iter().enumerate() {
+        let name = format!("custom{}", i + 1);
+        log_debug(
+            "custom:cli",
+            &format!("adding segment '{}' with command: {}", name, command),
+        );
+
+        let mut options = HashMap::new();
+        options.insert(
+            "command".to_string(),
+            serde_json::Value::String(command.clone()),
+        );
+        options.insert("timeout".to_string(), serde_json::Value::Number(2.into()));
+
+        config.segments.push(SegmentConfig {
+            id: SegmentId::Custom(name),
+            enabled: true,
+            icon: IconConfig {
+                plain: "\u{2699}".to_string(),
+                nerd_font: "\u{f013}".to_string(),
+            },
+            colors: ColorConfig {
+                icon: Some(AnsiColor::Color16 { c16: 13 }),
+                text: Some(AnsiColor::Color16 { c16: 7 }),
+                background: None,
+            },
+            styles: TextStyleConfig::default(),
+            options,
+        });
+    }
+
+    log_debug(
+        "custom:cli",
+        &format!(
+            "config now has {} total segments ({} custom)",
+            config.segments.len(),
+            custom_commands.len()
+        ),
+    );
 }
