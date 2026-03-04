@@ -1,4 +1,4 @@
-use crate::config::{Config, SegmentId, StyleMode};
+use crate::config::{Config, StyleMode};
 use crate::ui::components::{
     color_picker::{ColorPickerComponent, NavDirection},
     help::HelpComponent,
@@ -61,6 +61,7 @@ impl App {
             help: HelpComponent::new(),
             status_message: None,
         };
+        app.preview.flush_custom(&config);
         app.preview.update_preview(&config);
         app
     }
@@ -229,6 +230,11 @@ impl App {
                         KeyCode::Char('p') => app.cycle_theme(),
                         KeyCode::Char('r') => app.reset_to_theme_defaults(),
                         KeyCode::Char('e') | KeyCode::Char('E') => app.open_separator_editor(),
+                        KeyCode::Char('f') | KeyCode::Char('F') => {
+                            app.preview.flush_custom(&app.config);
+                            app.preview.update_preview(&app.config);
+                            app.status_message = Some("Custom segments flushed!".to_string());
+                        }
                         _ => {}
                     }
                 }
@@ -313,6 +319,7 @@ impl App {
                 "[S] Save Config",
                 "[W] Write Theme",
                 "[Ctrl+S] Save Theme",
+                "[F] Flush Custom",
                 "[Esc] Quit",
             ]
         };
@@ -494,19 +501,10 @@ impl App {
         match self.selected_panel {
             Panel::SegmentList => {
                 // Toggle segment enabled/disabled in segment list
+                let custom_idx = self.config.custom_segment_index(self.selected_segment);
                 if let Some(segment) = self.config.segments.get_mut(self.selected_segment) {
                     segment.enabled = !segment.enabled;
-                    let segment_name = match segment.id {
-                        SegmentId::Model => "Model",
-                        SegmentId::Directory => "Directory",
-                        SegmentId::Git => "Git",
-                        SegmentId::ContextWindow => "Context Window",
-                        SegmentId::Usage => "Usage",
-                        SegmentId::Cost => "Cost",
-                        SegmentId::Session => "Session",
-                        SegmentId::OutputStyle => "Output Style",
-                        SegmentId::Update => "Update",
-                    };
+                    let segment_name = segment.id.display_name_numbered(custom_idx);
                     let is_enabled = segment.enabled;
                     self.status_message = Some(format!(
                         "{} segment {}",
@@ -521,19 +519,10 @@ impl App {
                 match self.selected_field {
                     FieldSelection::Enabled => {
                         // Toggle enabled state in settings panel too
+                        let custom_idx = self.config.custom_segment_index(self.selected_segment);
                         if let Some(segment) = self.config.segments.get_mut(self.selected_segment) {
                             segment.enabled = !segment.enabled;
-                            let segment_name = match segment.id {
-                                SegmentId::Model => "Model",
-                                SegmentId::Directory => "Directory",
-                                SegmentId::Git => "Git",
-                                SegmentId::ContextWindow => "Context Window",
-                                SegmentId::Usage => "Usage",
-                                SegmentId::Cost => "Cost",
-                                SegmentId::Session => "Session",
-                                SegmentId::OutputStyle => "Output Style",
-                                SegmentId::Update => "Update",
-                            };
+                            let segment_name = segment.id.display_name_numbered(custom_idx);
                             let is_enabled = segment.enabled;
                             self.status_message = Some(format!(
                                 "{} segment {}",

@@ -12,6 +12,7 @@ use std::collections::HashMap;
 pub struct PreviewComponent {
     preview_cache: String,
     preview_text: Text<'static>,
+    custom_values: HashMap<String, String>,
 }
 
 impl Default for PreviewComponent {
@@ -25,6 +26,7 @@ impl PreviewComponent {
         Self {
             preview_cache: String::new(),
             preview_text: Text::default(),
+            custom_values: HashMap::new(),
         }
     }
 
@@ -79,6 +81,88 @@ impl PreviewComponent {
 
     pub fn get_preview_cache(&self) -> &str {
         &self.preview_cache
+    }
+
+    pub fn flush_custom(&mut self, config: &Config) {
+        use crate::utils::logger::log_debug;
+
+        self.custom_values.clear();
+        let custom_count = config
+            .segments
+            .iter()
+            .filter(|s| matches!(s.id, SegmentId::Custom(_)))
+            .count();
+        log_debug(
+            "custom:flush",
+            &format!("flushing {} custom segments", custom_count),
+        );
+
+        for segment_config in &config.segments {
+            if let SegmentId::Custom(ref name) = segment_config.id {
+                if !segment_config.enabled {
+                    log_debug(
+                        "custom:flush",
+                        &format!("segment '{}' skipped: disabled", name),
+                    );
+                    continue;
+                }
+                let command = segment_config
+                    .options
+                    .get("command")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                if command.is_empty() {
+                    log_debug(
+                        "custom:flush",
+                        &format!("segment '{}' skipped: empty command", name),
+                    );
+                    continue;
+                }
+                log_debug(
+                    "custom:flush",
+                    &format!("segment '{}' executing: {}", name, command),
+                );
+                let output = if cfg!(target_os = "windows") {
+                    std::process::Command::new("cmd")
+                        .args(["/C", command])
+                        .output()
+                } else {
+                    std::process::Command::new("sh")
+                        .args(["-c", command])
+                        .output()
+                };
+                match output {
+                    Ok(output) if output.status.success() => {
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        let value = stdout.lines().next().unwrap_or("").trim().to_string();
+                        if !value.is_empty() {
+                            log_debug(
+                                "custom:flush",
+                                &format!("segment '{}' result: {}", name, value),
+                            );
+                            self.custom_values.insert(name.clone(), value);
+                        } else {
+                            log_debug(
+                                "custom:flush",
+                                &format!("segment '{}' returned empty output", name),
+                            );
+                        }
+                    }
+                    Ok(output) => {
+                        log_debug(
+                            "custom:flush",
+                            &format!("segment '{}' exited with status: {}", name, output.status),
+                        );
+                    }
+                    Err(e) => {
+                        log_debug(
+                            "custom:flush",
+                            &format!("segment '{}' command failed: {}", name, e),
+                        );
+                    }
+                }
+            }
+        }
     }
 
     /// Generate mock segments data for preview display
@@ -183,6 +267,22 @@ impl PreviewComponent {
                         map
                     },
                 },
+                SegmentId::Custom(ref name) => {
+                    let value = self
+                        .custom_values
+                        .get(name)
+                        .cloned()
+                        .unwrap_or_else(|| "[no data]".to_string());
+                    SegmentData {
+                        primary: value,
+                        secondary: "".to_string(),
+                        metadata: {
+                            let mut map = HashMap::new();
+                            map.insert("custom_name".to_string(), name.clone());
+                            map
+                        },
+                    }
+                }
             };
 
             segments_data.push((segment_config.clone(), mock_data));

@@ -64,11 +64,7 @@ pub fn log_debug(tag: &str, msg: &str) {
 
     let line = format!("[{}] [{}] {}\n", timestamp, tag, msg);
 
-    if let Ok(mut file) = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)
-    {
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_path) {
         let _ = file.write_all(line.as_bytes());
     }
 }
