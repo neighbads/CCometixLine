@@ -533,7 +533,13 @@ pub fn collect_all_segments(
                     .get("timeout")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(2);
-                let segment = CustomSegment::new(name.clone(), command.to_string(), timeout);
+                let cache_duration = segment_config
+                    .options
+                    .get("cache_duration")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(30);
+                let segment =
+                    CustomSegment::new(name.clone(), command.to_string(), timeout, cache_duration);
                 segment.collect(input)
             }
         };
