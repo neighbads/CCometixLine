@@ -139,7 +139,10 @@ fn apply_custom_segments(config: &mut Config, custom_commands: &[String]) {
             serde_json::Value::String(command.clone()),
         );
         options.insert("timeout".to_string(), serde_json::Value::Number(2.into()));
-        options.insert("cache_duration".to_string(), serde_json::Value::Number(30.into()));
+        options.insert(
+            "cache_duration".to_string(),
+            serde_json::Value::Number(30.into()),
+        );
 
         config.segments.push(SegmentConfig {
             id: SegmentId::Custom(name),

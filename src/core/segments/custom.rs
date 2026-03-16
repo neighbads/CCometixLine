@@ -120,10 +120,7 @@ impl CustomSegment {
         {
             Ok(child) => child,
             Err(e) => {
-                log_debug(
-                    "custom",
-                    &format!("'{}' spawn failed: {}", self.name, e),
-                );
+                log_debug("custom", &format!("'{}' spawn failed: {}", self.name, e));
                 return None;
             }
         };
@@ -162,10 +159,7 @@ impl CustomSegment {
                 Some(primary)
             }
             Ok(Err(e)) => {
-                log_debug(
-                    "custom",
-                    &format!("'{}' wait error: {}", self.name, e),
-                );
+                log_debug("custom", &format!("'{}' wait error: {}", self.name, e));
                 None
             }
             Err(_) => {
@@ -173,7 +167,10 @@ impl CustomSegment {
                 #[cfg(unix)]
                 {
                     use std::process::Command as KillCmd;
-                    let _ = KillCmd::new("kill").arg("-9").arg(child_id.to_string()).output();
+                    let _ = KillCmd::new("kill")
+                        .arg("-9")
+                        .arg(child_id.to_string())
+                        .output();
                 }
                 log_debug(
                     "custom",
@@ -227,7 +224,10 @@ impl Segment for CustomSegment {
         let cached = self.load_cache();
         let primary = if cached.as_ref().is_some_and(|c| self.is_cache_valid(c)) {
             let output = cached.unwrap().output;
-            log_debug("custom", &format!("'{}' using cached: {}", self.name, output));
+            log_debug(
+                "custom",
+                &format!("'{}' using cached: {}", self.name, output),
+            );
             output
         } else {
             log_debug(
